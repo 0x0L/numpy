@@ -9,6 +9,7 @@ import warnings
 
 from numpy.core import multiarray as mu
 from numpy.core import umath as um
+from numpy.core import _umath_tests as umt
 from numpy.core.numeric import asanyarray
 from numpy.core import numerictypes as nt
 from numpy._globals import _NoValue
@@ -111,15 +112,33 @@ def _var(a, axis=None, dtype=None, out=None, ddof=0, keepdims=False):
     else:
         arrmean = arrmean.dtype.type(arrmean / rcount)
 
+    ###
+    if axis is None:
+        axis = tuple(range(arr.ndim))
+    elif isinstance(axis, int):
+        axis = (axis,)
+    else:
+        axis = tuple(sorted(axis))
+
+    tr = [i for i in range(arr.ndim) if i != axis[-1]] + [axis[-1]]
+    S, S2 = umt.sumsquarediff(arr.transpose(*tr), arrmean.transpose(*tr),
+                              keepdims=keepdims, subok=False)
+
+    if len(axis)> 1:
+        S = umr_sum(S, axis=axis[:-1], keepdims=keepdims)
+        S2 = umr_sum(S2, axis=axis[:-1], keepdims=keepdims)
+
+    ret = S2 - S**2 / rcount
+
     # Compute sum of squared deviations from mean
     # Note that x may not be inexact and that we need it to be an array,
     # not a scalar.
-    x = asanyarray(arr - arrmean)
-    if issubclass(arr.dtype.type, nt.complexfloating):
-        x = um.multiply(x, um.conjugate(x), out=x).real
-    else:
-        x = um.multiply(x, x, out=x)
-    ret = umr_sum(x, axis, dtype, out, keepdims)
+    # x = asanyarray(arr - arrmean)
+    # if issubclass(arr.dtype.type, nt.complexfloating):
+    #     x = um.multiply(x, um.conjugate(x), out=x).real
+    # else:
+    #     x = um.multiply(x, x, out=x)
+    # ret = umr_sum(x, axis, dtype, out, keepdims)
 
     # Compute degrees of freedom and make sure it is not negative.
     rcount = max([rcount - ddof, 0])
