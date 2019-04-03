@@ -298,8 +298,8 @@ char *sumsquarediff_signature = "(i),(1)->(),()";
 
 /**begin repeat
 
-   #TYPE=FLOAT,DOUBLE#
-   #typ=npy_float,npy_double#
+   #TYPE=HALF,FLOAT,DOUBLE,LONGDOUBLE#
+   #typ=npy_half,npy_float,npy_double,npy_longdouble#
 */
 
 static void
@@ -309,12 +309,11 @@ static void
     npy_intp di = dimensions[0];
     npy_intp i;
     npy_intp is1=steps[0];
-    npy_intp is2=steps[1];
     BEGIN_OUTER_LOOP_4
         char *ip1=args[0], *ip2=args[1], *op1=args[2], *op2=args[3];
         const @typ@ m = *(@typ@ *)ip2;
-        @typ@ S = 0, S2 = 0;
-        for (i = 0; i < di; i++, ip1 += is1, ip2 += is2) {
+        @typ@ S=0, S2=0;
+        for (i = 0; i < di; i++, ip1 += is1) {
             const @typ@ x = *(@typ@ *)ip1 - m;
             S += x;
             S2 += x * x;
@@ -326,193 +325,34 @@ static void
 
 /**end repeat**/
 
-
-char *meanvar_naive_signature = "(i)->(),()";
-char *meanvar_yc_signature = "(i)->(),()";
-char *meanvar_neely_signature = "(i)->(),()";
-
-/*
- *  These functions compute the sample mean and variance:
- *      - naive: naive textbook E(|x|**2) - |E(x)|**2
- *      - yc: Youngs-Cramer one-pass formula
- *      - neely: two-pass with error correction (default)
- */
-
 /**begin repeat
 
-   #TYPE=CFLOAT,CDOUBLE#
-   #typ=npy_float,npy_double#
+   #TYPE=CFLOAT,CDOUBLE,CLONGDOUBLE#
+   #typ=npy_float,npy_double,npy_longdouble#
 */
 
 static void
-@TYPE@_meanvar_naive(char **args, npy_intp *dimensions, npy_intp *steps, void *NPY_UNUSED(func))
+@TYPE@_sumsquarediff(char **args, npy_intp *dimensions, npy_intp *steps, void *NPY_UNUSED(func))
 {
-    INIT_OUTER_LOOP_3
+    INIT_OUTER_LOOP_4
     npy_intp di = dimensions[0];
     npy_intp i;
-    npy_intp is=steps[0];
-    BEGIN_OUTER_LOOP_3
-        char *ip=args[0], *op1=args[1], *op2=args[2];
-        @typ@ meanr = 0, meani = 0, S = 0;
-        for (i = 0; i < di; i++, ip += is) {
-            const @typ@ xr = *(@typ@ *)ip;
-            const @typ@ xi = *((@typ@ *)ip + 1);
-            meanr += xr;
-            meani += xi;
-            S += xr * xr + xi * xi;
+    npy_intp is1=steps[0];
+    BEGIN_OUTER_LOOP_4
+        char *ip1=args[0], *ip2=args[1], *op1=args[2], *op2=args[3];
+        const @typ@ mr = *(@typ@ *)ip2;
+        const @typ@ mi = *((@typ@ *)ip2 + 1);
+        @typ@ Sr=0, Si=0, S2=0;
+        for (i = 0; i < di; i++, ip1 += is1) {
+            const @typ@ xr = *(@typ@ *)ip1 - mr;
+            const @typ@ xi = *((@typ@ *)ip1 + 1) - mi;
+            Sr += xr;
+            Si += xi;
+            S2 += xr * xr + xi * xi;
         }
-        meanr /= di;
-        meani /= di;
-        S /= di;
-        *(@typ@ *)op1 = meanr;
-        *((@typ@ *)op1 + 1) = meani;
-        *(@typ@ *)op2 = S - (meanr * meanr + meani * meani);
-    END_OUTER_LOOP
-}
-
-static void
-@TYPE@_meanvar_yc(char **args, npy_intp *dimensions, npy_intp *steps, void *NPY_UNUSED(func))
-{
-    INIT_OUTER_LOOP_3
-    npy_intp di = dimensions[0];
-    npy_intp i;
-    npy_intp is=steps[0];
-    BEGIN_OUTER_LOOP_3
-        char *ip=args[0], *op1=args[1], *op2=args[2];
-        @typ@ Xr = *(@typ@ *)ip, Xi = *((@typ@ *)ip + 1);
-        @typ@ S = 0;
-        @typ@ dXr, dXi;
-        ip += is;
-        for (i = 2; i <= di; i++, ip += is) {
-            const @typ@ xr = *(@typ@ *)ip;
-            const @typ@ xi = *((@typ@ *)ip + 1);
-            Xr += xr;
-            Xi += xi;
-            dXr = Xr - i * xr;
-            dXi = Xi - i * xi;
-            S += (dXr * dXr + dXi * dXi) / (i * (i - 1));
-        }
-        *(@typ@ *)op1 = Xr / di;
-        *((@typ@ *)op1 + 1) = Xi / di;
-        *(@typ@ *)op2 = S / di;
-    END_OUTER_LOOP
-}
-
-static void
-@TYPE@_meanvar_neely(char **args, npy_intp *dimensions, npy_intp *steps, void *NPY_UNUSED(func))
-{
-    INIT_OUTER_LOOP_3
-    npy_intp di = dimensions[0];
-    npy_intp i;
-    npy_intp is=steps[0];
-    BEGIN_OUTER_LOOP_3
-        char *ip=args[0], *op1=args[1], *op2=args[2];
-        @typ@ meanr = 0, meani = 0;
-        for (i = 0; i < di; i++, ip += is) {
-            meanr += *(@typ@ *)ip;
-            meani += *((@typ@ *)ip + 1);
-        }
-        meanr /= di;
-        meani /= di;
-
-        ip = args[0];
-        @typ@ mu1r=0, mu1i=0, mu2=0;
-        for (i = 0; i < di; i++, ip += is) {
-            const @typ@ xr = *(@typ@ *)ip - meanr;
-            const @typ@ xi = *((@typ@ *)ip + 1) - meani;
-            mu1r += xr;
-            mu1i += xi;
-            mu2 += xr * xr + xi * xi;
-        }
-        mu1r /= di;
-        mu1i /= di;
-        mu2 = mu2 / di - (mu1r * mu1r + mu1i * mu1i);
-        *(@typ@ *)op1 = meanr + mu1r;
-        *((@typ@ *)op1 + 1) = meani + mu1i;
-        *(@typ@ *)op2 = mu2;
-    END_OUTER_LOOP
-}
-
-/**end repeat**/
-
-/**begin repeat
-
-   #TYPE=FLOAT,DOUBLE#
-   #typ=npy_float,npy_double#
-*/
-
-static void
-@TYPE@_meanvar_naive(char **args, npy_intp *dimensions, npy_intp *steps, void *NPY_UNUSED(func))
-{
-    INIT_OUTER_LOOP_3
-    npy_intp di = dimensions[0];
-    npy_intp i;
-    npy_intp is=steps[0];
-    BEGIN_OUTER_LOOP_3
-        char *ip=args[0], *op1=args[1], *op2=args[2];
-        @typ@ mean = 0, S = 0;
-        for (i = 0; i < di; i++, ip += is) {
-            const @typ@ x = *(@typ@ *)ip;
-            mean += x;
-            S += x * x;
-        }
-        mean /= di;
-        S /= di;
-        *(@typ@ *)op1 = mean;
-        *(@typ@ *)op2 = S - mean * mean;
-    END_OUTER_LOOP
-}
-
-static void
-@TYPE@_meanvar_yc(char **args, npy_intp *dimensions, npy_intp *steps, void *NPY_UNUSED(func))
-{
-    INIT_OUTER_LOOP_3
-    npy_intp di = dimensions[0];
-    npy_intp i;
-    npy_intp is=steps[0];
-    BEGIN_OUTER_LOOP_3
-        char *ip=args[0], *op1=args[1], *op2=args[2];
-        @typ@ X = *(@typ@ *)ip;
-        @typ@ S = 0;
-        @typ@ dX;
-        ip += is;
-        for (i = 2; i <= di; i++, ip += is) {
-            const @typ@ x = *(@typ@ *)ip;
-            X += x;
-            dX = X - i * x;
-            S += (dX * dX) / (i * (i - 1));
-        }
-        *(@typ@ *)op1 = X / di;
-        *(@typ@ *)op2 = S / di;
-    END_OUTER_LOOP
-}
-
-static void
-@TYPE@_meanvar_neely(char **args, npy_intp *dimensions, npy_intp *steps, void *NPY_UNUSED(func))
-{
-    INIT_OUTER_LOOP_3
-    npy_intp di = dimensions[0];
-    npy_intp i;
-    npy_intp is=steps[0];
-    BEGIN_OUTER_LOOP_3
-        char *ip=args[0], *op1=args[1], *op2=args[2];
-        @typ@ mean = 0;
-        for (i = 0; i < di; i++, ip += is) {
-            mean += *(@typ@ *)ip;
-        }
-        mean /= di;
-
-        ip = args[0];
-        @typ@ mu1=0, mu2=0;
-        for (i = 0; i < di; i++, ip += is) {
-            const @typ@ x = *(@typ@ *)ip - mean;
-            mu1 += x;
-            mu2 += x * x;
-        }
-        mu1 /= di;
-        mu2 = mu2 / di - mu1 * mu1;
-        *(@typ@ *)op1 = mean + mu1;
-        *(@typ@ *)op2 = mu2;
+        *(@typ@ *)op1 = Sr;
+        *((@typ@ *)op1 + 1) = Si;
+        *(@typ@ *)op2 = S2;
     END_OUTER_LOOP
 }
 
@@ -590,41 +430,32 @@ static char euclidean_pdist_signatures[] = { NPY_FLOAT, NPY_FLOAT,
                                              NPY_DOUBLE, NPY_DOUBLE };
 
 static PyUFuncGenericFunction sumsquarediff_functions[] = {
+    HALF_sumsquarediff,
     FLOAT_sumsquarediff,
     DOUBLE_sumsquarediff,
+    LONGDOUBLE_sumsquarediff,
+    CFLOAT_sumsquarediff,
+    CDOUBLE_sumsquarediff,
+    CLONGDOUBLE_sumsquarediff,
 };
 static void *sumsquarediff_data[] = {
     (void *)NULL,
     (void *)NULL,
+    (void *)NULL,
+    (void *)NULL,
+    (void *)NULL,
+    (void *)NULL,
+    (void *)NULL,
 };
 static char sumsquarediff_signatures[] = {
+    NPY_HALF, NPY_HALF, NPY_HALF, NPY_HALF,
     NPY_FLOAT, NPY_FLOAT, NPY_FLOAT, NPY_FLOAT,
     NPY_DOUBLE, NPY_DOUBLE, NPY_DOUBLE, NPY_DOUBLE,
+    NPY_LONGDOUBLE, NPY_LONGDOUBLE, NPY_LONGDOUBLE, NPY_LONGDOUBLE,
+    NPY_CFLOAT, NPY_CFLOAT, NPY_CFLOAT, NPY_FLOAT,
+    NPY_CDOUBLE, NPY_CDOUBLE, NPY_CDOUBLE, NPY_DOUBLE,
+    NPY_CLONGDOUBLE, NPY_CLONGDOUBLE, NPY_CLONGDOUBLE, NPY_LONGDOUBLE,
 };
-
-/**begin repeat
-   #VARIANT=naive,yc,neely#
-*/
-static PyUFuncGenericFunction meanvar_@VARIANT@_functions[] = {
-    FLOAT_meanvar_@VARIANT@,
-    DOUBLE_meanvar_@VARIANT@,
-    CFLOAT_meanvar_@VARIANT@,
-    CDOUBLE_meanvar_@VARIANT@
-};
-static void *meanvar_@VARIANT@_data[] = {
-    (void *)NULL,
-    (void *)NULL,
-    (void *)NULL,
-    (void *)NULL
-};
-static char meanvar_@VARIANT@_signatures[] = {
-    NPY_FLOAT, NPY_FLOAT, NPY_FLOAT,
-    NPY_DOUBLE, NPY_DOUBLE, NPY_DOUBLE,
-    NPY_CFLOAT, NPY_CFLOAT, NPY_FLOAT,
-    NPY_CDOUBLE, NPY_CDOUBLE, NPY_DOUBLE
-};
-
-/**end repeat**/
 
 static PyUFuncGenericFunction cumsum_functions[] = { LONG_cumsum, DOUBLE_cumsum };
 static void *cumsum_data[] = { (void *)NULL, (void *)NULL };
@@ -695,7 +526,7 @@ addUfuncs(PyObject *dictionary) {
 
     f = PyUFunc_FromFuncAndDataAndSignature(sumsquarediff_functions,
                     sumsquarediff_data, sumsquarediff_signatures,
-                    2, 2, 2, PyUFunc_None, "sumsquarediff",
+                    7, 2, 2, PyUFunc_None, "sumsquarediff",
                     "Mean and variance of the input (i)->(),()\n",
                     0, sumsquarediff_signature);
     if (f == NULL) {
@@ -703,21 +534,6 @@ addUfuncs(PyObject *dictionary) {
     }
     PyDict_SetItemString(dictionary, "sumsquarediff", f);
     Py_DECREF(f);
-
-/**begin repeat
-#VARIANT=naive,yc,neely#
-*/
-    f = PyUFunc_FromFuncAndDataAndSignature(meanvar_@VARIANT@_functions,
-                    meanvar_@VARIANT@_data, meanvar_@VARIANT@_signatures,
-                    4, 1, 2, PyUFunc_None, "meanvar_@VARIANT@",
-                    "Mean and variance of the input (i)->(),()\n",
-                    0, meanvar_@VARIANT@_signature);
-    if (f == NULL) {
-        return -1;
-    }
-    PyDict_SetItemString(dictionary, "meanvar_@VARIANT@", f);
-    Py_DECREF(f);
-/**end repeat**/
 
     f = PyUFunc_FromFuncAndDataAndSignature(cumsum_functions,
                     cumsum_data, cumsum_signatures,

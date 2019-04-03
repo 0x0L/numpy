@@ -93,10 +93,16 @@ def _var(a, axis=None, dtype=None, out=None, ddof=0, keepdims=False):
     arr = asanyarray(a)
 
     rcount = _count_reduce_items(arr, axis)
+
     # Make this warning show up on top.
     if ddof >= rcount:
         warnings.warn("Degrees of freedom <= 0 for slice", RuntimeWarning,
                       stacklevel=2)
+
+    if rcount == 1:
+        return 0.0
+    elif rcount == 0:
+        return float('nan')
 
     # Cast bool, unsigned int, and int to float64 by default
     if dtype is None and issubclass(arr.dtype.type, (nt.integer, nt.bool_)):
@@ -120,15 +126,35 @@ def _var(a, axis=None, dtype=None, out=None, ddof=0, keepdims=False):
     else:
         axis = tuple(sorted(axis))
 
-    tr = [i for i in range(arr.ndim) if i != axis[-1]] + [axis[-1]]
-    S, S2 = umt.sumsquarediff(arr.transpose(*tr), arrmean.transpose(*tr),
-                              keepdims=keepdims, subok=False)
+    dim_order = [i for i in range(arr.ndim) if i != axis[-1]] + [axis[-1]]
+    S, S2 = umt.sumsquarediff(arr.transpose(*dim_order),
+                              arrmean.transpose(*dim_order),
+                              keepdims=keepdims, dtype=dtype, subok=False)
 
-    if len(axis)> 1:
-        S = umr_sum(S, axis=axis[:-1], keepdims=keepdims)
-        S2 = umr_sum(S2, axis=axis[:-1], keepdims=keepdims)
+    S = umr_sum(S, axis=axis[:-1], keepdims=keepdims)
+    S2 = umr_sum(S2, axis=axis[:-1], out=out, keepdims=keepdims)
 
-    ret = S2 - S**2 / rcount
+    if keepdims:
+        S = S.transpose(*dim_order)
+        S2 = S2.transpose(*dim_order)
+
+    # a better way to do this ?
+    # what if out != None ?
+    S2 = S2.view(type(arr))
+    if getattr(S2, '__array_finalize__', None):
+        S2.__array_finalize__(arr)
+
+    if isinstance(S, mu.ndarray):
+        S = um.multiply(S, um.conjugate(S), out=S).real
+        S = um.true_divide(S, rcount, out=S, casting='unsafe')
+    else:
+        S = S2.dtype.type(abs(S)**2 / rcount)
+
+    ret = um.subtract(S2, S, out=out, dtype=dtype)
+
+# TODO:
+# float16 looks totally off !?! eg np.eye(3, dtype='float16').var()
+# dtype = obj
 
     # Compute sum of squared deviations from mean
     # Note that x may not be inexact and that we need it to be an array,
