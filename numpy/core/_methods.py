@@ -99,14 +99,14 @@ def _var(a, axis=None, dtype=None, out=None, ddof=0, keepdims=False):
         warnings.warn("Degrees of freedom <= 0 for slice", RuntimeWarning,
                       stacklevel=2)
 
-    if rcount == 1:
-        return 0.0
-    elif rcount == 0:
-        return float('nan')
-
     # Cast bool, unsigned int, and int to float64 by default
     if dtype is None and issubclass(arr.dtype.type, (nt.integer, nt.bool_)):
         dtype = mu.dtype('f8')
+
+    # TODO: keepdims, out
+    if rcount < 2:
+        dtype = dtype or arr.dtype
+        return dtype.type('nan') if rcount == 0 else dtype.type(0)
 
     # Compute the mean.
     # Note that if dtype is not of inexact type then arraymean will
@@ -118,7 +118,9 @@ def _var(a, axis=None, dtype=None, out=None, ddof=0, keepdims=False):
     else:
         arrmean = arrmean.dtype.type(arrmean / rcount)
 
-    ###
+    # Compute the sums of
+    # (arr - mean) --> S
+    # (arr - mean)**2 --> S2
     if axis is None:
         axis = tuple(range(arr.ndim))
     elif isinstance(axis, int):
@@ -131,8 +133,9 @@ def _var(a, axis=None, dtype=None, out=None, ddof=0, keepdims=False):
                               arrmean.transpose(*dim_order),
                               keepdims=keepdims, dtype=dtype, subok=False)
 
-    S = umr_sum(S, axis=axis[:-1], keepdims=keepdims)
-    S2 = umr_sum(S2, axis=axis[:-1], out=out, keepdims=keepdims)
+    if len(axis) > 1:
+        S = umr_sum(S, axis=axis[:-1], keepdims=keepdims)
+        S2 = umr_sum(S2, axis=axis[:-1], out=out, keepdims=keepdims)
 
     if keepdims:
         S = S.transpose(*dim_order)
